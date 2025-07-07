@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "jppecasapk"
+rootProject.name = "UlifeUctrl"
 include(":app")

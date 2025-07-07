@@ -1,10 +1,12 @@
 package com.example.ulife
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
+import android.util.Log
 import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
 
@@ -18,6 +20,7 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webview)
 
+        // Configurações da WebView
         webView.settings.apply {
             javaScriptEnabled = true
             javaScriptCanOpenWindowsAutomatically = true
@@ -25,8 +28,8 @@ class MainActivity : AppCompatActivity() {
             setSupportMultipleWindows(true)
         }
 
-        // ✅ Suporte a alert, confirm, etc
-        object : WebChromeClient() {
+        // Suporte a dialogs (alert, confirm, window.open etc.)
+        webView.webChromeClient = object : WebChromeClient() {
             override fun onCreateWindow(
                 view: WebView?,
                 isDialog: Boolean,
@@ -34,14 +37,17 @@ class MainActivity : AppCompatActivity() {
                 resultMsg: Message?
             ): Boolean {
                 val newWebView = WebView(view!!.context)
+                newWebView.settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                }
                 newWebView.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
                         request: WebResourceRequest?
                     ): Boolean {
-                        val url = request?.url.toString()
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        view?.context?.startActivity(intent)
+                        // Carrega tudo dentro da WebView
+                        request?.url?.let { view?.loadUrl(it.toString()) }
                         return true
                     }
                 }
@@ -51,41 +57,49 @@ class MainActivity : AppCompatActivity() {
                 resultMsg.sendToTarget()
                 return true
             }
-        }.also { webView.webChromeClient = it }
+        }
 
-        // ✅ Intercepta links externos (como WhatsApp)
+        // Intercepta links externos (como WhatsApp), mas deixa OAuth do Google dentro da WebView
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url.toString()
-
-                return if (url.startsWith("https://") || url.startsWith("https://")) {
-                    if (Uri.parse(url).host != "server.isalvei.com.br") {
-                        // Abre link externo no navegador padrão
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        startActivity(intent)
-                        true
+                return try {
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        val host = Uri.parse(url).host.orEmpty()
+                        // Hosts que permanecem na WebView (incluindo OAuth do Google)
+                        val trustedHosts = listOf(
+                            "server.isalvei.com.br",
+                            "google.com",
+                            "accounts.google.com",
+                            "googleusercontent.com"
+                        )
+                        if (host !in trustedHosts) {
+                            // Abre link não confiável no navegador externo
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            true
+                        } else {
+                            // Carrega dentro da WebView
+                            false
+                        }
                     } else {
-                        // Carrega no WebView se for do mesmo domínio
                         false
                     }
-                } else {
+                } catch (e: ActivityNotFoundException) {
+                    Log.w("MainActivity", "Nenhum app encontrado para abrir: $url", e)
+                    false
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Erro ao processar URL: $url", e)
                     false
                 }
             }
         }
 
-        webView.settings.setSupportMultipleWindows(true)
-
         WebView.setWebContentsDebuggingEnabled(true)
-
         webView.loadUrl("https://server.isalvei.com.br/login")
     }
 
     override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
+        if (webView.canGoBack()) webView.goBack()
+        else super.onBackPressed()
     }
 }
